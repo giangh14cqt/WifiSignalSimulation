@@ -178,7 +178,9 @@
         updateRuler();
         updateRulerHorizontal();
         updateCmap();
-        blockers.length = 0;
+        updateCmapRuler();
+        updateCanvas();
+        // blockers.length = 0;
       });
 
       const transmisisonPowerForm =
@@ -261,23 +263,6 @@
         // Define the color thresholds
         // const thresholds = [30, 50, 60, 70];
         value = Math.pow(1.1, value) / 790;
-        // value = value / 70;
-
-        // // Define the corresponding colors for each threshold
-        // const colors = ["white", "green", "blue", "yellow", "red"];
-
-        // // Determine the color index based on the value
-        // let colorIndex = 0;
-        // while (
-        //   colorIndex < thresholds.length &&
-        //   value >= thresholds[colorIndex]
-        // ) {
-        //   colorIndex++;
-        // }
-
-        // const color = colorIndex < colors.length ? colors[colorIndex] : "red";
-
-        // return color;
         // Ensure the input value is in the range [0, 1]
         value = Math.min(1, Math.max(0, value));
 
@@ -348,6 +333,7 @@
 
       // Function to draw cmap with color gradient by distance
       function updateCmap() {
+        cmap.height = canvas.height;
         cmap_context.clearRect(0, 0, cmap.width, cmap.height); // Clear canvas
         for (let y = 0; y < cmap.height; y++) {
           var color = calculateColor(0, y, true);
