@@ -39,6 +39,19 @@
         text-align: center;
       }
 
+      #cmap-ruler {
+        float: left;
+        margin-left: 10px;
+        font-family: Arial, sans-serif;
+      }
+
+      #cmap-ruler div {
+        border-bottom: 1px solid #000;
+        /* margin-bottom: -1px; */
+        text-align: center;
+        line-height: 20px;
+      }
+
       form {
         clear: both;
       }
@@ -65,11 +78,30 @@
       <br />
       <button type="submit">Set Size</button>
     </form>
+    <form id="transmisison-power">
+      <label for="power">Transmission Power:</label>
+      <input type="number" id="power" name="power" value="20" required />
+      <br />
+      <button type="submit">Set Power</button>
+    </form>
+    <form id="transmisison-frequency">
+      <label for="frequency">Transmission Frequency:</label>
+      <input
+        type="number"
+        id="frequency"
+        name="frequency"
+        value="2.4"
+        step="any"
+        required />
+      <br />
+      <button type="submit">Set Frequency</button>
+    </form>
 
     <div id="ruler-horizontal"></div>
     <canvas id="myCanvas" width="800" height="400"></canvas>
     <div id="ruler"></div>
     <canvas id="cmap" width="30" height="400"></canvas>
+    <div id="cmap-ruler"></div>
     <form id="filesubmit">
       <input type="file" id="myFile" name="filename" />
       <input type="submit" />
@@ -93,7 +125,6 @@
     <div id="wall-list"></div>
 
     <script>
-      const blocker_width = 10;
       const concrete_relative_permittivity = 4.5;
       // Get the canvas and context
       const canvas = document.getElementById("myCanvas");
@@ -104,11 +135,14 @@
       // Ruler elements
       const ruler = document.getElementById("ruler");
       const rulerHorizontal = document.getElementById("ruler-horizontal");
+      const cmapRuler = document.getElementById("cmap-ruler");
 
       // Variables for point coordinates
       let selectedPoint = { x: 0, y: 0 };
       let drawBlockerMode = false;
       let isDrawingBlocker = false;
+      let transmisison_power = 20;
+      let transmisison_frequency = 2.4;
 
       // Blockers array
       const blockers = [];
@@ -147,6 +181,29 @@
         blockers.length = 0;
       });
 
+      const transmisisonPowerForm =
+        document.getElementById("transmisison-power");
+      transmisisonPowerForm.addEventListener("submit", (e) => {
+        e.preventDefault();
+        transmisison_power = parseFloat(document.getElementById("power").value);
+        updateCanvas();
+        updateCmap();
+        updateCmapRuler();
+      });
+
+      const transmisisonFrequencyForm = document.getElementById(
+        "transmisison-frequency"
+      );
+      transmisisonFrequencyForm.addEventListener("submit", (e) => {
+        e.preventDefault();
+        transmisison_frequency = parseFloat(
+          document.getElementById("frequency").value
+        );
+        updateCanvas();
+        updateCmap();
+        updateCmapRuler();
+      });
+
       function check_inside_blocker(x, y) {
         for (const blocker of blockers) {
           if (
@@ -161,16 +218,23 @@
         return false;
       }
 
-      function wifi_signal_strenth_path_loss(x, y, isCmap, f = 2.4, gain = 20) {
+      function wifi_signal_strenth_path_loss(x, y, isCmap) {
         // x and y are in meters
         // f is in GHz
         // returns path loss in dB
-        if (isCmap) return 20 * Math.log10(f) + 32 + 20 * Math.log10(y) - gain;
+        if (isCmap)
+          return (
+            20 * Math.log10(transmisison_frequency) +
+            32 +
+            20 * Math.log10(y) -
+            transmisison_power
+          );
         var pass_loss = 0;
         var total = Math.max(
           Math.abs(x - selectedPoint.x),
           Math.abs(y - selectedPoint.y)
         );
+        if (total == 0) return 0;
         var air_count = 0;
         for (var i = 0; i < total; i++) {
           var x1 = selectedPoint.x + (x - selectedPoint.x) * (i / total);
@@ -185,37 +249,83 @@
           (x - selectedPoint.x) ** 2 + (y - selectedPoint.y) ** 2
         );
         var distance_in_air = (distance / total) * air_count;
-        // pass_loss = 20 * Math.log10(distance_in_air) + 20 * Math.log10(f) + 32;
         return (
-          20 * Math.log10(distance_in_air) + 20 * Math.log10(f) + 32 - gain
+          20 * Math.log10(distance_in_air) +
+          20 * Math.log10(transmisison_frequency) +
+          32 -
+          transmisison_power
         );
       }
 
       function convertColor(value) {
         // Define the color thresholds
-        const thresholds = [30, 50, 60, 70];
+        // const thresholds = [30, 50, 60, 70];
+        value = Math.pow(1.1, value) / 790;
+        // value = value / 70;
 
-        // Define the corresponding colors for each threshold
-        const colors = ["white", "blue", "green", "yellow", "red"];
+        // // Define the corresponding colors for each threshold
+        // const colors = ["white", "green", "blue", "yellow", "red"];
 
-        // Determine the color index based on the value
-        let colorIndex = 0;
-        while (
-          colorIndex < thresholds.length &&
-          value >= thresholds[colorIndex]
-        ) {
-          colorIndex++;
-        }
+        // // Determine the color index based on the value
+        // let colorIndex = 0;
+        // while (
+        //   colorIndex < thresholds.length &&
+        //   value >= thresholds[colorIndex]
+        // ) {
+        //   colorIndex++;
+        // }
 
-        const color = colorIndex < colors.length ? colors[colorIndex] : "red";
+        // const color = colorIndex < colors.length ? colors[colorIndex] : "red";
 
-        return color;
+        // return color;
+        // Ensure the input value is in the range [0, 1]
+        value = Math.min(1, Math.max(0, value));
+
+        // Define the color map
+        var cmap_c = [
+          [0.2, 0.2, 0.5], // Blue
+          [0.2, 0.5, 1], // Cyan
+          [0.2, 1, 1], // Light Blue
+          [0.2, 1, 0.2], // Green
+          [1, 1, 0.2], // Yellow
+          [1, 0.5, 0.2], // Orange
+          [1, 0.2, 0.2], // Red
+          [0.5, 0.2, 0.2], // Dark Red
+        ];
+
+        // Determine the index and interpolation factor
+        var index = Math.floor(value * (cmap_c.length - 2));
+        var fraction = value * (cmap_c.length - 1) - index;
+        // console.log(value);
+        // console.log(index, fraction);
+        // Interpolate between two neighboring colors
+        var color1 = cmap_c[index];
+        var color2 = cmap_c[index + 1];
+        // console.log(color1, color2);
+        var interpolatedColor = [
+          color1[0] + fraction * (color2[0] - color1[0]),
+          color1[1] + fraction * (color2[1] - color1[1]),
+          color1[2] + fraction * (color2[2] - color1[2]),
+        ];
+
+        // Convert RGB values to CSS color string
+        var rgbString =
+          "rgb(" +
+          Math.round(interpolatedColor[0] * 255) +
+          "," +
+          Math.round(interpolatedColor[1] * 255) +
+          "," +
+          Math.round(interpolatedColor[2] * 255) +
+          ")";
+
+        return rgbString;
       }
 
       // Function to calculate color based on distance to the selected point
       function calculateColor(x, y, isCmap = false) {
         if (check_inside_blocker(x, y)) return "gray";
         const distance = wifi_signal_strenth_path_loss(x, y, isCmap);
+        // console.log(distance);
         // Interpolate color between red and green based on distance
         // const red = 255 * (distance / maxDistance);
         // const green = 255 * (1 - distance / maxDistance);
@@ -269,6 +379,22 @@
         }
       }
 
+      function updateCmapRuler() {
+        cmapRuler.innerHTML = "";
+        const dB = [50, 60, 70, 80];
+        var prev = 0;
+        for (let i = 0; i < canvas.height; i++) {
+          if (wifi_signal_strenth_path_loss(0, i, true) > dB[0]) {
+            const div = document.createElement("div");
+            div.textContent = `${dB[0]}dB`;
+            div.style.height = `${Math.min(i - prev, canvas.height - prev)}px`;
+            cmapRuler.appendChild(div);
+            prev = i;
+            dB.shift();
+          }
+        }
+      }
+
       // Function to update the wall list
       function updateWallList() {
         const wallList = document.getElementById("wall-list");
@@ -299,7 +425,7 @@
         var fileInput = document.getElementById("myFile");
         var file = fileInput.files[0];
         var reader = new FileReader();
-        console.log(typeof file);
+        // console.log(typeof file);
         reader.readAsText(file);
         reader.onload = function (event) {
           var data = event.target.result;
@@ -346,6 +472,7 @@
       updateRuler();
       updateRulerHorizontal();
       updateCmap();
+      updateCmapRuler();
     </script>
   </body>
 </html>
