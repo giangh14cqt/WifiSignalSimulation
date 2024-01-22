@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Wifi Signal Simulation</title>
+    <style>
+      canvas {
+        border: 1px solid #000;
+        float: left;
+      }
+
+      #ruler {
+        float: left;
+        margin-left: 10px;
+        font-family: Arial, sans-serif;
+      }
+
+      #ruler div {
+        height: 20px;
+        border-top: 1px solid #000;
+        margin-bottom: -1px;
+        text-align: center;
+        line-height: 20px;
+      }
+
+      #ruler-horizontal {
+        display: flex;
+        margin-left: 1px;
+        /* justify-content: space-between; */
+      }
+
+      #ruler-horizontal div {
+        width: 100px;
+        border-left: 1px solid #000;
+        border-right: 1px solid #000;
+        margin-right: -1px;
+        margin-left: -1px;
+        text-align: center;
+      }
+
+      form {
+        clear: both;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>1 px = 5cm</h1>
+    <form id="canvasSizeForm">
+      <label for="widthInput">Canvas Width:</label>
+      <input
+        type="number"
+        id="widthInput"
+        name="widthInput"
+        value="800"
+        required />
+      <br />
+      <label for="heightInput">Canvas Height:</label>
+      <input
+        type="number"
+        id="heightInput"
+        name="heightInput"
+        value="400"
+        required />
+      <br />
+      <button type="submit">Set Size</button>
+    </form>
+
+    <div id="ruler-horizontal"></div>
+    <canvas id="myCanvas" width="800" height="400"></canvas>
+    <div id="ruler"></div>
+    <canvas id="cmap" width="30" height="400"></canvas>
+    <form id="filesubmit">
+      <input type="file" id="myFile" name="filename" />
+      <input type="submit" />
+    </form>
+
+    <form id="wall">
+      <label for="x1">x1:</label>
+      <input type="number" id="x1" name="x1" required />
+      <br />
+      <label for="y1">y1:</label>
+      <input type="number" id="y1" name="y1" required />
+      <br />
+      <label for="x2">x2:</label>
+      <input type="number" id="x2" name="x2" required />
+      <br />
+      <label for="y2">y2:</label>
+      <input type="number" id="y2" name="y2" required />
+      <br />
+      <button type="submit">Add Wall</button>
+    </form>
+    <div id="wall-list"></div>
+
+    <script>
+      const blocker_width = 10;
+      const concrete_relative_permittivity = 4.5;
+      // Get the canvas and context
+      const canvas = document.getElementById("myCanvas");
+      const cmap = document.getElementById("cmap");
+      const ctx = canvas.getContext("2d");
+      const cmap_context = cmap.getContext("2d");
+
+      // Ruler elements
+      const ruler = document.getElementById("ruler");
+      const rulerHorizontal = document.getElementById("ruler-horizontal");
+
+      // Variables for point coordinates
+      let selectedPoint = { x: 0, y: 0 };
+      let drawBlockerMode = false;
+      let isDrawingBlocker = false;
+
+      // Blockers array
+      const blockers = [];
+
+      // Listen for mouse click to select a point or draw a blocker
+      canvas.addEventListener("mousedown", (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+
+        isDrawingBlocker = drawBlockerMode;
+
+        if (drawBlockerMode) {
+          // Start drawing blocker
+          drawBlocker(mouseX, mouseY);
+        } else {
+          // Select point
+          selectedPoint = { x: mouseX, y: mouseY };
+          updateCanvas();
+        }
+      });
+
+      // Handle form submission to set custom canvas size
+      const canvasSizeForm = document.getElementById("canvasSizeForm");
+      canvasSizeForm.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const widthInput = document.getElementById("widthInput");
+        const heightInput = document.getElementById("heightInput");
+        const width = parseInt(widthInput.value);
+        const height = parseInt(heightInput.value);
+        canvas.width = width;
+        canvas.height = height;
+        updateRuler();
+        updateRulerHorizontal();
+        updateCmap();
+        blockers.length = 0;
+      });
+
+      function check_inside_blocker(x, y) {
+        for (const blocker of blockers) {
+          if (
+            x > blocker.x1 &&
+            x < blocker.x2 &&
+            y > blocker.y1 &&
+            y < blocker.y2
+          ) {
+            return true;
+          }
+        }
+        return false;
+      }
+
+      function wifi_signal_strenth_path_loss(x, y, isCmap, f = 2.4, gain = 20) {
+        // x and y are in meters
+        // f is in GHz
+        // returns path loss in dB
+        if (isCmap) return 20 * Math.log10(f) + 32 + 20 * Math.log10(y) - gain;
+        var pass_loss = 0;
+        var total = Math.max(
+          Math.abs(x - selectedPoint.x),
+          Math.abs(y - selectedPoint.y)
+        );
+        var air_count = 0;
+        for (var i = 0; i < total; i++) {
+          var x1 = selectedPoint.x + (x - selectedPoint.x) * (i / total);
+          var y1 = selectedPoint.y + (y - selectedPoint.y) * (i / total);
+          if (check_inside_blocker(x1, y1)) {
+            air_count += concrete_relative_permittivity;
+          } else {
+            air_count += 1;
+          }
+        }
+        var distance = Math.sqrt(
+          (x - selectedPoint.x) ** 2 + (y - selectedPoint.y) ** 2
+        );
+        var distance_in_air = (distance / total) * air_count;
+        // pass_loss = 20 * Math.log10(distance_in_air) + 20 * Math.log10(f) + 32;
+        return (
+          20 * Math.log10(distance_in_air) + 20 * Math.log10(f) + 32 - gain
+        );
+      }
+
+      function convertColor(value) {
+        // Define the color thresholds
+        const thresholds = [30, 50, 60, 70];
+
+        // Define the corresponding colors for each threshold
+        const colors = ["white", "blue", "green", "yellow", "red"];
+
+        // Determine the color index based on the value
+        let colorIndex = 0;
+        while (
+          colorIndex < thresholds.length &&
+          value >= thresholds[colorIndex]
+        ) {
+          colorIndex++;
+        }
+
+        const color = colorIndex < colors.length ? colors[colorIndex] : "red";
+
+        return color;
+      }
+
+      // Function to calculate color based on distance to the selected point
+      function calculateColor(x, y, isCmap = false) {
+        if (check_inside_blocker(x, y)) return "gray";
+        const distance = wifi_signal_strenth_path_loss(x, y, isCmap);
+        // Interpolate color between red and green based on distance
+        // const red = 255 * (distance / maxDistance);
+        // const green = 255 * (1 - distance / maxDistance);
+        // return `rgba(${red.toFixed(0)}, ${green.toFixed(0)}, 0, 0.6)`;
+        return convertColor(distance);
+      }
+
+      // Function to update the canvas
+      function updateCanvas() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        for (let x = 0; x < canvas.width; x++) {
+          console.log(x);
+          for (let y = 0; y < canvas.height; y++) {
+            ctx.fillStyle = calculateColor(x, y);
+            ctx.fillRect(x, y, 1, 1);
+          }
+        }
+      }
+
+      // Function to draw cmap with color gradient by distance
+      function updateCmap() {
+        cmap_context.clearRect(0, 0, cmap.width, cmap.height); // Clear canvas
+        for (let y = 0; y < cmap.height; y++) {
+          var color = calculateColor(0, y, true);
+          for (let x = 0; x < cmap.width; x++) {
+            cmap_context.fillStyle = color;
+            cmap_context.fillRect(x, y, 1, 1);
+          }
+        }
+      }
+
+      // Function to update the ruler
+      function updateRuler() {
+        ruler.innerHTML = "";
+        const meters = canvas.height / 20; // 20px represents 1 meter
+        for (let i = 0; i < meters; i++) {
+          const div = document.createElement("div");
+          div.textContent = `${i + 1}m`;
+          ruler.appendChild(div);
+        }
+      }
+
+      function updateRulerHorizontal() {
+        rulerHorizontal.innerHTML = "";
+        const meters = canvas.width / 100; // 20px represents 1 meter
+        for (let i = 0; i < meters; i++) {
+          const div = document.createElement("div");
+          div.textContent = `${(i + 1) * 5}m`;
+          rulerHorizontal.appendChild(div);
+        }
+      }
+
+      // Function to update the wall list
+      function updateWallList() {
+        const wallList = document.getElementById("wall-list");
+        wallList.innerHTML = "";
+
+        // Iterate through the blockers array and create a list item for each wall
+        blockers.forEach((blocker, index) => {
+          const wallItem = document.createElement("div");
+          wallItem.textContent = `Wall ${index + 1}: (${blocker.x1}, ${
+            blocker.y1
+          }) - (${blocker.x2}, ${blocker.y2})`;
+          wallList.appendChild(wallItem);
+          // Add a button to remove the wall
+          const removeButton = document.createElement("button");
+          removeButton.textContent = "Remove";
+          removeButton.addEventListener("click", () => {
+            blockers.splice(index, 1);
+            updateCanvas();
+            updateWallList();
+          });
+          wallItem.appendChild(removeButton);
+        });
+      }
+
+      const filesubmitForm = document.getElementById("filesubmit");
+      filesubmitForm.addEventListener("submit", (e) => {
+        e.preventDefault();
+        var fileInput = document.getElementById("myFile");
+        var file = fileInput.files[0];
+        var reader = new FileReader();
+        console.log(typeof file);
+        reader.readAsText(file);
+        reader.onload = function (event) {
+          var data = event.target.result;
+          data = data.split("\n");
+          for (var i = 0; i < data.length; i++) {
+            var wall = data[i].split(" ");
+            wall = {
+              x1: parseInt(wall[0]),
+              y1: parseInt(wall[1]),
+              x2: parseInt(wall[2]),
+              y2: parseInt(wall[3]),
+            };
+            blockers.push(wall);
+          }
+          updateCanvas();
+          updateWallList();
+        };
+        reader.onerror = function () {
+          alert("Unable to read " + files[0]);
+        };
+        console.log("file selected");
+      });
+
+      const wallForm = document.getElementById("wall");
+      wallForm.addEventListener("submit", (e) => {
+        e.preventDefault();
+
+        const x1 = parseInt(document.getElementById("x1").value);
+        const y1 = parseInt(document.getElementById("y1").value);
+        const x2 = parseInt(document.getElementById("x2").value);
+        const y2 = parseInt(document.getElementById("y2").value);
+
+        const wall = { x1, y1, x2, y2 };
+        blockers.push(wall);
+        updateCanvas();
+        updateWallList();
+
+        // Clear the form
+        wallForm.reset();
+      });
+
+      // Initial canvas update
+      updateCanvas();
+      updateRuler();
+      updateRulerHorizontal();
+      updateCmap();
+    </script>
+  </body>
+</html>
