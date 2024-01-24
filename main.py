@@ -14,7 +14,7 @@ def signal_strength(distance, freq, transmitter_gain=0, relative_permittivity=1)
 
 materials = {
     "air": 1,
-    "concrete": 5,
+    "concrete": 4.5,
     "silicon": 11.7,
     "methanol": 33,
     "water": 80,
